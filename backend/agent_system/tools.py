@@ -43,18 +43,32 @@ def read_csv_data(file_path: str):
         return json.dumps({"status": "error", "message": f"读取失败: {str(e)}"})
 
 def run_r_analysis(r_code: str):
+    
     """(工具3) 接收 R 代码并在本地执行"""
     job_id = str(uuid.uuid4())[:8]
     script_name = f"temp_task_{job_id}.R"
     script_path = os.path.join(DATA_WORKSPACE, script_name)
     
     # 【优化】在代码最前面强制加上关闭警告和静默加载包的指令
+    # 【生信环境增强型补丁】
     r_prefix = (
-        'options(warn = -1)\n'
-        'suppressMessages(library(dplyr, quietly = TRUE))\n'
+        '# 1. 强制使用清华镜像源，防止 Agent 抽风自动安装包时失败\n'
+        'options(repos = c(CRAN = "https://mirrors.tuna.tsinghua.edu.cn/CRAN/"))\n'
+        'options(BioC_mirror = "https://mirrors.tuna.tsinghua.edu.cn/bioconductor")\n'
+        
+        '# 2. 环境诊断：把 R 找包的路径打印出来，方便Debug\n'
+        'cat("Current LibPaths: ", .libPaths(), "\\n")\n'
+        
+        '# 3. 路径适配：设置工作目录\n'
         f'setwd("{DATA_WORKSPACE.replace(chr(92), "/")}")\n'
+        
+        '# 4. 抑制不必要的警告，让 Agent 输出更干净\n'
+        'options(warn = -1)\n'
+        'suppressMessages(library(methods))\n' # 基础包，防报错
+        
+        '# 5. 自动容错逻辑：如果包不存在，尝试加载（但不阻塞）\n'
+        'safe_load <- function(pkg) { if(!require(pkg, character.only=TRUE, quietly=TRUE)) { cat(paste0("MISSING_PKG: ", pkg, "\\n")) } }\n'
     )
-    
     injected_code = r_prefix + r_code
     
     with open(script_path, "w", encoding="utf-8") as f:
