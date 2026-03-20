@@ -1,0 +1,213 @@
+/* --- 全局基础设置 --- */    
+* { box-sizing: border-box; }    
+body, html {    
+  margin: 0; padding: 0; height: 100%;    
+  background-color: #f7f9fc;    
+  font-family: -apple-system, "Segoe UI", Roboto, sans-serif;    
+  overflow: hidden; /* 禁止全局滚动，靠内部局部滚动 */    
+}    
+  
+.app-container {    
+  display: flex;    
+  height: 100vh;    
+  width: 100vw;    
+  background: #f0f2f5;    
+  overflow: hidden;    
+}    
+  
+/* --- 拖拽条 --- */    
+.resizer {    
+  width: 6px;    
+  cursor: col-resize;    
+  background: #e0e0e0;    
+  transition: background 0.2s;    
+  z-index: 10;    
+}    
+.resizer:hover { background: #72bf44; }    
+  
+/* --- 左侧：对话模块 --- */    
+.chat-section {    
+  display: flex;    
+  flex-direction: column;    
+  background: #ffffff;    
+  height: 100%;    
+  overflow: hidden;    
+}    
+  
+.chat-card {  
+  display: flex;  
+  flex-direction: column;  
+  height: 100%;  
+  width: 100%;  
+}  
+  
+.chat-header {    
+  flex-shrink: 0;    
+  padding: 15px 25px;    
+  border-bottom: 1px solid #f0f0f0;    
+  background: white;    
+  display: flex;    
+  align-items: center;    
+  gap: 12px;    
+}    
+  
+.chat-header h2 { margin: 0; font-size: 18px; color: #333; }    
+.chat-header p { margin: 0; font-size: 12px; color: #72bf44; font-weight: bold; }    
+  
+/* --- 🌟 聊天窗口滚动核心逻辑 --- */
+.chat-window {    
+  flex: 1;  
+  overflow-y: auto; 
+  min-height: 0; 
+  padding: 25px;    
+  background: #fafafa;    
+  display: flex;    
+  flex-direction: column;    
+  gap: 20px; /* 气泡间距 */
+}    
+  
+/* --- 🌟 气泡对齐与样式 (回归版) --- */
+.message-wrapper {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+}
+
+/* 用户消息靠右 */
+.message-wrapper.user {
+  align-items: flex-end;
+}
+
+/* AI消息靠左 */
+.message-wrapper.ai {
+  align-items: flex-start;
+}
+
+.message-bubble {    
+  max-width: 85%; /* 限制宽度，不占满全行 */
+  padding: 12px 18px;    
+  font-size: 15px;    
+  line-height: 1.6;    
+  border-radius: 18px;    
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  word-wrap: break-word;
+}  
+
+/* 用户：渐变绿 */  
+.message-bubble.user {    
+  background: linear-gradient(135deg, #82d64d 0%, #72bf44 100%) !important;    
+  color: white !important;    
+  border-bottom-right-radius: 4px; /* 尖角 */
+}    
+  
+/* AI：白色 */
+.message-bubble.ai {    
+  background: white !important;    
+  color: #333 !important;    
+  border: 1px solid #ebeef5;    
+  border-bottom-left-radius: 4px; /* 尖角 */
+}    
+
+/* 气泡内 Markdown 间距修复 */
+.message-bubble p { margin: 0; }
+.message-bubble p + p { margin-top: 10px; }
+
+/* 🌟 气泡内图片：严格限制，防止撑爆 */  
+.message-bubble img {  
+  max-width: 100%;  
+  max-height: 350px; 
+  object-fit: contain;  
+  border-radius: 8px;  
+  margin-top: 10px;  
+  display: block;
+}  
+  
+/* Markdown 表格优化 */    
+.message-bubble table {    
+  border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 13px;    
+}    
+.message-bubble th, .message-bubble td {    
+  border: 1px solid #ddd; padding: 6px; text-align: left;    
+}    
+  
+/* --- 输入框区域 --- */    
+.input-area {    
+  flex-shrink: 0;    
+  padding: 20px 25px;    
+  background: white;    
+  border-top: 1px solid #f0f0f0;    
+}    
+  
+.input-container {    
+  display: flex; align-items: center; gap: 15px;    
+  background: #f1f3f4; padding: 5px 18px; border-radius: 30px;    
+}    
+  
+.input-container input {    
+  flex: 1; border: none !important; outline: none !important;    
+  background: transparent; padding: 12px 5px; font-size: 15px;    
+}    
+  
+.N-btn {    
+  background: none; border: none; font-family: "Georgia", serif;    
+  font-weight: 900; font-style: italic; font-size: 28px;    
+  color: #72bf44; cursor: pointer; transition: 0.3s;    
+}    
+.N-btn:hover { color: #ff6b81; transform: scale(1.1); }    
+  
+.send-btn {    
+  background: #72bf44; color: white; border: none;    
+  padding: 8px 20px; border-radius: 20px; font-weight: bold;    
+  cursor: pointer;    
+}    
+  
+/* --- 右侧：Lab 工作台 --- */    
+.workbench-section {    
+  flex: 1;    
+  background: #f8f9fa;    
+  padding: 20px;    
+  overflow-y: auto;    
+  min-width: 350px;    
+}    
+  
+.result-card {    
+  background: white; border-radius: 12px; padding: 18px;    
+  box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px;    
+}    
+  
+.result-card h3 {    
+  margin: 0 0 12px 0; font-size: 15px; color: #444;    
+  border-left: 4px solid #72bf44; padding-left: 10px;    
+}    
+  
+.result-content img {    
+  max-width: 100%;    
+  max-height: 400px;    
+  object-fit: contain;    
+  border-radius: 8px;    
+  display: block;    
+  margin: 10px auto;    
+}    
+  
+/* 动画特效 */    
+.typing-dots { display: flex; gap: 4px; padding: 10px; }    
+.typing-dots span {    
+  width: 6px; height: 6px; background: #72bf44; border-radius: 50%;    
+  animation: bounce 1.4s infinite ease-in-out;    
+}    
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }    
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }    
+@keyframes bounce {    
+  0%, 80%, 100% { transform: translateY(0); }    
+  40% { transform: translateY(-8px); }    
+}  
+  
+/* 文件就绪提示 */
+.file-ready { font-size: 13px; color: #72bf44; margin-bottom: 10px; padding-left: 10px; font-weight: 500; }  
+  
+/* 右侧头部布局 */
+.workbench-header { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }  
+.workbench-header h3 { margin: 0; font-size: 18px; color: #333; }  
+  
+/* LAB 标签 */
+.lab-tag { background: #72bf44; color: white; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 12px; letter-spacing: 1px; }
