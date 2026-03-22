@@ -15,6 +15,35 @@ def create_session(db, session_id: str, title: str = "新会话"):
     db.refresh(session)
     return session
 
+def get_session(db, session_id: str):
+    return db.query(ChatSession).filter(ChatSession.session_id == session_id).first()
+
+def update_session_title(db, session_id: str, title: str):
+    session = get_session(db, session_id)
+    if not session:
+        return None
+
+    session.title = title
+    db.commit()
+    db.refresh(session)
+    return session
+
+def ensure_session_title(db, session_id: str, title: str):
+    """
+    只有标题为空或默认标题时才更新，避免后续覆盖用户已有标题
+    """
+    session = get_session(db, session_id)
+    if not session:
+        return None
+
+    current_title = (session.title or "").strip()
+    if current_title in ["", "新会话"]:
+        session.title = title
+        db.commit()
+        db.refresh(session)
+
+    return session
+
 def save_message(db, session_id: str, role: str, content: str):
     """
     保存一条消息
@@ -61,6 +90,20 @@ def get_session_files(db, session_id: str):
         .filter(StoredFile.session_id == session_id)
         .order_by(StoredFile.id.desc())
         .all()
+    )
+
+def get_first_uploaded_file(db, session_id: str):
+    """
+    获取该会话最早上传的文件
+    """
+    return (
+        db.query(StoredFile)
+        .filter(
+            StoredFile.session_id == session_id,
+            StoredFile.source_type == "upload"
+        )
+        .order_by(StoredFile.id.asc())
+        .first()
     )
 
 def get_all_sessions(db):

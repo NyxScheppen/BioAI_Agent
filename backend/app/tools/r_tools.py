@@ -1,13 +1,13 @@
-import os
 import json
 import uuid
 import subprocess
+from pathlib import Path
 from app.agent.tool_registry import register_tool
 from app.core.paths import TEMP_DIR, UPLOAD_DIR, GENERATED_DIR
 
 @register_tool(
     name="run_r_analysis",
-    description="执行 R 代码进行生信分析。输入文件在 uploads，输出结果请保存到 generated。",
+    description="执行 R 代码进行生信分析。R 当前工作目录已经是 GENERATED_DIR。保存输出文件时不要再手动创建或拼接 'generated/' 前缀。若需要子目录，请使用 ensure_output_dir('subdir') 并写入 file.path(out_dir, 'xxx.png')。",
     parameters={
         "type": "object",
         "properties": {
@@ -25,16 +25,22 @@ def run_r_analysis(r_code: str):
     """
     job_id = str(uuid.uuid4())[:8]
     script_name = f"temp_task_{job_id}.R"
-    script_path = os.path.join(TEMP_DIR, script_name)
+    script_path = Path(TEMP_DIR) / script_name
 
-    # 给 R 注入环境变量和工作路径
+    Path(GENERATED_DIR).mkdir(parents=True, exist_ok=True)
+
     r_prefix = f"""
 library(data.table)
 
-UPLOAD_DIR <- "{UPLOAD_DIR.as_posix()}"
-GENERATED_DIR <- "{GENERATED_DIR.as_posix()}"
+UPLOAD_DIR <- "{Path(UPLOAD_DIR).as_posix()}"
+GENERATED_DIR <- "{Path(GENERATED_DIR).as_posix()}"
+
+cat("注意：当前工作目录已经是 GENERATED_DIR。\n")
+cat("保存结果时不要再写 generated/xxx，也不要再 dir.create('generated')。\n")
+cat("如需子目录，请使用 ensure_output_dir('subdir')。\n")
 
 # 所有输出默认进入 generated
+dir.create(GENERATED_DIR, recursive = TRUE, showWarnings = FALSE)
 setwd(GENERATED_DIR)
 
 smart_read <- function(file_path) {{
@@ -43,6 +49,16 @@ smart_read <- function(file_path) {{
     file_path <- file.path(UPLOAD_DIR, file_path)
   }}
   return(file_path)
+}}
+
+ensure_output_dir <- function(subdir = NULL) {{
+  if (is.null(subdir) || subdir == "") {{
+    dir.create(GENERATED_DIR, recursive = TRUE, showWarnings = FALSE)
+    return(GENERATED_DIR)
+  }}
+  out_dir <- file.path(GENERATED_DIR, subdir)
+  dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
+  return(out_dir)
 }}
 
 cat("R 环境已准备完成\\n")
@@ -57,7 +73,7 @@ cat(paste("GENERATED_DIR =", GENERATED_DIR, "\\n"))
 
     try:
         result = subprocess.run(
-            ["Rscript", script_path],
+            ["Rscript", str(script_path)],
             capture_output=True,
             text=True,
             timeout=300
@@ -82,5 +98,5 @@ cat(paste("GENERATED_DIR =", GENERATED_DIR, "\\n"))
         }, ensure_ascii=False)
 
     finally:
-        if os.path.exists(script_path):
-            os.remove(script_path)
+        if script_path.exists():
+            script_path.unlink()

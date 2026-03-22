@@ -4,57 +4,82 @@ import './App.css'
 
 const API_BASE = 'http://127.0.0.1:8000'
 
-const DEFAULT_WELCOME_MESSAGE = {
-  role: 'ai',
-  content: '你好！我是你的 生物信息学 专属 Agent。我已经准备好处理你的实验数据了。'
-}
+const IMAGE_TYPES = ['image']
+const DOWNLOADABLE_TYPES = ['table', 'text', 'other', 'pdf', 'archive']
 
-const DEFAULT_RESULT_CARD = {
-  type: 'text',
-  title: '🧬 实验室状态',
-  content: '请在左侧上传 .csv / .txt / .gz 等文件开始分析。'
+const createSession = () => {
+  const id =
+    window.crypto && window.crypto.randomUUID
+      ? window.crypto.randomUUID()
+      : `session_${Date.now()}_${Math.floor(Math.random() * 10000)}`
+
+  return {
+    id,
+    title: '新会话',
+    attachedFile: null,
+    messages: [
+      {
+        role: 'ai',
+        content: '你好！我是你的 生物信息学 专属 Agent。我已经准备好处理你的实验数据了。'
+      }
+    ],
+    results: [
+      {
+        id: `status_${Date.now()}`,
+        type: 'text',
+        title: '🧬 实验室状态',
+        content: '请上传 .csv / .txt / .tsv / .xlsx 等文件开始分析。'
+      }
+    ]
+  }
 }
 
 function App() {
+  const [sessions, setSessions] = useState(() => {
+    const saved = localStorage.getItem('bio_agent_sessions')
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed
+      } catch (e) {}
+    }
+    return [createSession()]
+  })
+
+  const [currentSessionId, setCurrentSessionId] = useState(() => {
+    return localStorage.getItem('bio_agent_current_session_id') || null
+  })
+
   const [userInput, setUserInput] = useState('')
-  const [messages, setMessages] = useState([DEFAULT_WELCOME_MESSAGE])
-  const [results, setResults] = useState([DEFAULT_RESULT_CARD])
   const [isLoading, setIsLoading] = useState(false)
-  const [attachedFile, setAttachedFile] = useState(null)
-
-  // 当前会话 id
-  const [sessionId, setSessionId] = useState('')
-
-  // 所有会话列表
-  const [sessionList, setSessionList] = useState([])
-
-  // 默认聊天区宽度
-  const [leftWidth, setLeftWidth] = useState(window.innerWidth * 0.55)
+  const [leftWidth, setLeftWidth] = useState(window.innerWidth * 0.5)
 
   const isResizing = useRef(false)
   const fileInputRef = useRef(null)
   const messagesEndRef = useRef(null)
 
-  // 初始化 session_id
   useEffect(() => {
-    let savedSessionId = localStorage.getItem('bio_agent_session_id')
-    if (!savedSessionId) {
-      savedSessionId = window.crypto?.randomUUID?.() || `session_${Date.now()}`
-      localStorage.setItem('bio_agent_session_id', savedSessionId)
+    if (!currentSessionId && sessions.length > 0) {
+      setCurrentSessionId(sessions[0].id)
     }
-    setSessionId(savedSessionId)
-  }, [])
+  }, [currentSessionId, sessions])
 
-  // 初始化后拉当前会话历史 + 全部会话列表
   useEffect(() => {
-    if (!sessionId) return
-    loadHistory(sessionId)
-    loadSessionList()
-  }, [sessionId])
+    localStorage.setItem('bio_agent_sessions', JSON.stringify(sessions))
+  }, [sessions])
+
+  useEffect(() => {
+    if (currentSessionId) {
+      localStorage.setItem('bio_agent_current_session_id', currentSessionId)
+    }
+  }, [currentSessionId])
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages, isLoading])
+  }, [sessions, currentSessionId, isLoading])
+
+  const currentSession =
+    sessions.find((s) => s.id === currentSessionId) || sessions[0] || null
 
   const startResizing = () => {
     isResizing.current = true
@@ -72,199 +97,228 @@ function App() {
 
   const handleMouseMove = (e) => {
     if (!isResizing.current) return
-    if (e.clientX > 420 && e.clientX < window.innerWidth - 320) {
+    if (e.clientX > 340 && e.clientX < window.innerWidth - 280) {
       setLeftWidth(e.clientX)
     }
   }
 
-  const getFileTypeLabel = (fileType) => {
-    switch (fileType) {
-      case 'image':
-        return '图片'
-      case 'table':
-        return '表格'
-      case 'text':
-        return '文本'
-      default:
-        return '文件'
+  const updateSession = (sessionId, updater) => {
+    setSessions((prev) =>
+      prev.map((session) =>
+        session.id === sessionId
+          ? typeof updater === 'function'
+            ? updater(session)
+            : { ...session, ...updater }
+          : session
+      )
+    )
+  }
+
+  const handleNewSession = () => {
+    const newSession = createSession()
+    setSessions((prev) => [newSession, ...prev])
+    setCurrentSessionId(newSession.id)
+    setUserInput('')
+    setIsLoading(false)
+  }
+
+  const handleSelectSession = (sessionId) => {
+    setCurrentSessionId(sessionId)
+    setUserInput('')
+  }
+
+  const handleDeleteSession = (sessionId, e) => {
+    e.stopPropagation()
+
+    const filtered = sessions.filter((s) => s.id !== sessionId)
+    if (filtered.length === 0) {
+      const fresh = createSession()
+      setSessions([fresh])
+      setCurrentSessionId(fresh.id)
+      return
+    }
+
+    setSessions(filtered)
+    if (currentSessionId === sessionId) {
+      setCurrentSessionId(filtered[0].id)
     }
   }
 
-  const mapBackendFilesToWorkbench = (backendFiles) => {
-    return backendFiles.map(file => ({
-      type: file.type === 'image' ? 'image' : 'file',
-      fileType: file.type,
-      title: `📁 ${file.name}`,
-      name: file.name,
-      content: `${file.url}${file.url.includes('?') ? '&' : '?'}t=${Date.now()}`
-    }))
+  const normalizeToAbsoluteFileUrl = (url) => {
+    if (!url) return ''
+
+    let finalUrl = String(url).trim()
+
+    if (finalUrl.startsWith('http://') || finalUrl.startsWith('https://')) {
+      return finalUrl.replace('/workspace/', '/files/')
+    }
+
+    if (finalUrl.startsWith('/files/')) {
+      return `${API_BASE}${finalUrl}`
+    }
+
+    if (finalUrl.startsWith('generated/')) {
+      return `${API_BASE}/files/${finalUrl}`
+    }
+
+    if (finalUrl.startsWith('files/')) {
+      return `${API_BASE}/${finalUrl}`
+    }
+
+    finalUrl = finalUrl.replace(/^\/+/, '')
+    return `${API_BASE}/files/${finalUrl}`
   }
 
-  const updateWorkbench = (backendFiles) => {
-    if (!backendFiles || backendFiles.length === 0) return
+  const guessResultType = (file) => {
+    if (!file) return 'file'
+    if (file.type === 'image') return 'plot'
+    return 'file'
+  }
 
-    const newItems = mapBackendFilesToWorkbench(backendFiles)
+  const buildResultFromFile = (file) => {
+    const absoluteUrl = normalizeToAbsoluteFileUrl(file.url || file.relative_path || file.name)
 
-    setResults(prev => {
-      const existingUrls = prev.map(item => (item.content || '').split('?')[0])
+    return {
+      id: `${file.relative_path || file.name}_${Date.now()}_${Math.random()}`,
+      type: guessResultType(file),
+      fileType: file.type || 'other',
+      title: file.type === 'image' ? '📊 生物信息分析图表' : `📎 ${file.name}`,
+      content: file.type === 'image' ? `${absoluteUrl}?t=${Date.now()}` : absoluteUrl,
+      rawUrl: absoluteUrl,
+      filename: file.name || 'download',
+      relativePath: file.relative_path || ''
+    }
+  }
 
-      const uniqueNew = newItems.filter(item => {
-        const cleanUrl = item.content.split('?')[0]
-        return !existingUrls.includes(cleanUrl)
+  const mergeSessionResults = (session, incomingResults) => {
+    const prevResults = session.results || []
+
+    const existingKeys = new Set(
+      prevResults.map((item) =>
+        item.type === 'plot'
+          ? `${item.filename || ''}|${(item.content || '').split('?')[0]}`
+          : `${item.filename || ''}|${item.rawUrl || item.content || ''}`
+      )
+    )
+
+    const uniqueNew = incomingResults.filter((item) => {
+      const key =
+        item.type === 'plot'
+          ? `${item.filename || ''}|${(item.content || '').split('?')[0]}`
+          : `${item.filename || ''}|${item.rawUrl || item.content || ''}`
+      if (existingKeys.has(key)) return false
+      existingKeys.add(key)
+      return true
+    })
+
+    return [...uniqueNew, ...prevResults]
+  }
+
+  const updateWorkbench = (sessionId, aiReply, backendFiles = []) => {
+    const markdownImgRegex = /!\[.*?\]\((.*?)\)/g
+    const plainUrlRegex =
+      /http:\/\/127\.0\.0\.1:8000\/files\/[a-zA-Z0-9_./-]+\.(png|jpg|jpeg|svg|gif|webp)/gi
+    const markdownLinkRegex = /\[([^\]]+)\]\((.*?)\)/g
+
+    const imageUrls = new Set()
+    const fileLinks = new Map()
+    const newResults = []
+
+    let match
+    while ((match = markdownImgRegex.exec(aiReply)) !== null) {
+      if (match[1]) imageUrls.add(match[1])
+    }
+
+    let urlMatch
+    while ((urlMatch = plainUrlRegex.exec(aiReply)) !== null) {
+      imageUrls.add(urlMatch[0])
+    }
+
+    let linkMatch
+    while ((linkMatch = markdownLinkRegex.exec(aiReply)) !== null) {
+      const text = linkMatch[1]
+      const url = linkMatch[2]
+      if (!url) continue
+
+      const lower = url.toLowerCase()
+      const isImage = /\.(png|jpg|jpeg|svg|gif|webp)(\?|$)/i.test(lower)
+
+      if (isImage) {
+        imageUrls.add(url)
+      } else {
+        const abs = normalizeToAbsoluteFileUrl(url)
+        fileLinks.set(abs, {
+          id: `md_${abs}_${Date.now()}_${Math.random()}`,
+          type: 'file',
+          fileType: 'other',
+          title: `📎 ${text || '结果文件'}`,
+          content: abs,
+          rawUrl: abs,
+          filename: text || abs.split('/').pop() || 'download'
+        })
+      }
+    }
+
+    imageUrls.forEach((url) => {
+      const finalUrl = normalizeToAbsoluteFileUrl(url)
+      if (!finalUrl) return
+
+      newResults.push({
+        id: `img_${finalUrl}_${Date.now()}_${Math.random()}`,
+        type: 'plot',
+        fileType: 'image',
+        title: '📊 生物信息分析图表',
+        content: `${finalUrl}?t=${Date.now()}`,
+        rawUrl: finalUrl,
+        filename: finalUrl.split('/').pop() || 'plot.png'
       })
-
-      const textCards = prev.filter(item => item.type === 'text')
-      const nonTextCards = prev.filter(item => item.type !== 'text')
-
-      return [...uniqueNew, ...nonTextCards, ...textCards]
     })
-  }
 
-  const loadSessionList = async () => {
-    try {
-      const response = await fetch(`${API_BASE}/api/history`)
-      const data = await response.json()
+    fileLinks.forEach((item) => newResults.push(item))
 
-      if (!response.ok) return
-
-      setSessionList(Array.isArray(data) ? data : [])
-    } catch (error) {
-      console.warn('加载会话列表失败:', error)
+    if (Array.isArray(backendFiles)) {
+      backendFiles.forEach((file) => {
+        newResults.push(buildResultFromFile(file))
+      })
     }
-  }
 
-  const loadHistory = async (sid) => {
-    try {
-      const response = await fetch(`${API_BASE}/api/history/${sid}`)
-      const data = await response.json()
+    if (newResults.length === 0) return
 
-      if (!response.ok) {
-        setMessages([DEFAULT_WELCOME_MESSAGE])
-        setResults([DEFAULT_RESULT_CARD])
-        return
-      }
-
-      // 恢复历史消息
-      if (data.messages && data.messages.length > 0) {
-        const restoredMessages = data.messages.map(msg => ({
-          role: msg.role === 'assistant' ? 'ai' : msg.role,
-          content: msg.content
-        }))
-        setMessages(restoredMessages)
-      } else {
-        setMessages([DEFAULT_WELCOME_MESSAGE])
-      }
-
-      // 恢复历史文件到 workbench
-      if (data.files && data.files.length > 0) {
-        const historyFiles = data.files.map(file => ({
-          url: `${API_BASE}/files/${file.relative_path}`,
-          name: file.filename,
-          type: file.file_type
-        }))
-
-        const mapped = mapBackendFilesToWorkbench(historyFiles)
-        setResults([
-          ...mapped,
-          {
-            type: 'text',
-            title: '🧬 实验室状态',
-            content: `已加载会话 ${sid.slice(0, 12)}... 的历史结果。`
-          }
-        ])
-      } else {
-        setResults([
-          {
-            type: 'text',
-            title: '🧬 实验室状态',
-            content: '该会话暂无历史文件输出。'
-          }
-        ])
-      }
-    } catch (error) {
-      console.warn('加载历史记录失败:', error)
-      setMessages([DEFAULT_WELCOME_MESSAGE])
-      setResults([DEFAULT_RESULT_CARD])
-    }
-  }
-
-  const createNewSession = async () => {
-    const newSessionId = window.crypto?.randomUUID?.() || `session_${Date.now()}`
-    localStorage.setItem('bio_agent_session_id', newSessionId)
-    setSessionId(newSessionId)
-
-    setMessages([DEFAULT_WELCOME_MESSAGE])
-
-    setResults([
-      {
-        type: 'text',
-        title: '🧬 实验室状态',
-        content: '新会话已创建，请上传文件或输入分析指令。'
-      }
-    ])
-
-    setUserInput('')
-    setAttachedFile(null)
-
-    // 先把新会话显示在顶部（即便后端暂时还没创建）
-    setSessionList(prev => {
-      const exists = prev.some(item => item.session_id === newSessionId)
-      if (exists) return prev
-
-      return [
-        {
-          session_id: newSessionId,
-          title: '新会话',
-          created_at: new Date().toISOString()
-        },
-        ...prev
-      ]
-    })
-  }
-
-  const switchSession = async (sid) => {
-    if (!sid || sid === sessionId) return
-    localStorage.setItem('bio_agent_session_id', sid)
-    setSessionId(sid)
-    setAttachedFile(null)
-    setUserInput('')
+    updateSession(sessionId, (session) => ({
+      ...session,
+      results: mergeSessionResults(session, newResults)
+    }))
   }
 
   const handleFileUpload = async (event) => {
     const file = event.target.files[0]
-    if (!file || !sessionId) return
+    if (!file || !currentSession) return
 
     setIsLoading(true)
+
     const formData = new FormData()
     formData.append('file', file)
+    formData.append('session_id', currentSession.id)
 
     try {
-      const response = await fetch(
-        `${API_BASE}/api/upload?session_id=${encodeURIComponent(sessionId)}`,
-        {
-          method: 'POST',
-          body: formData,
-        }
-      )
+      const response = await fetch(`${API_BASE}/api/upload`, {
+        method: 'POST',
+        body: formData
+      })
 
       const data = await response.json()
 
       if (response.ok) {
-        setAttachedFile(data.filename)
-
-        if (data.url && data.filename) {
-          updateWorkbench([
-            {
-              url: data.url,
-              name: data.filename,
-              type: data.type || 'other'
-            }
-          ])
-        }
-
-        loadSessionList()
+        updateSession(currentSession.id, (session) => ({
+          ...session,
+          attachedFile: data.filename || file.name,
+          title:
+            session.title === '新会话'
+              ? data.filename || file.name
+              : session.title
+        }))
       } else {
-        alert('文件上传失败')
+        alert(data.detail || '文件上传失败')
       }
     } catch (error) {
       alert('文件上传失败')
@@ -275,19 +329,23 @@ function App() {
   }
 
   const sendMessage = async () => {
-    if (!userInput.trim() && !attachedFile) return
-    if (isLoading || !sessionId) return
+    if (!currentSession) return
+    if (!userInput.trim() && !currentSession.attachedFile) return
+    if (isLoading) return
 
-    const displayContent = attachedFile
-      ? `发送的文件：[文件:${attachedFile}] ${userInput}`
+    const displayContent = currentSession.attachedFile
+      ? `发送的文件：[文件:${currentSession.attachedFile}] ${userInput}`
       : userInput
 
     const newMessage = { role: 'user', content: displayContent }
-    const updatedHistory = [...messages, newMessage]
+    const updatedHistory = [...currentSession.messages, newMessage]
 
-    setMessages(updatedHistory)
+    updateSession(currentSession.id, {
+      messages: updatedHistory,
+      attachedFile: null
+    })
+
     setUserInput('')
-    setAttachedFile(null)
     setIsLoading(true)
 
     try {
@@ -295,145 +353,196 @@ function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          session_id: sessionId,
+          session_id: currentSession.id,
           messages: updatedHistory
-        }),
+        })
       })
 
       const data = await response.json()
 
-      if (response.ok) {
-        setMessages(prev => [
-          ...prev,
-          { role: 'ai', content: data.reply || '分析完成，但未返回内容。' }
-        ])
-
-        if (data.files) {
-          updateWorkbench(data.files)
-        }
-
-        // 聊天完成后刷新会话列表
-        await loadSessionList()
-      } else {
-        setMessages(prev => [...prev, { role: 'ai', content: '❌ 后端返回异常' }])
+      if (!response.ok) {
+        throw new Error(data.detail || '请求失败')
       }
+
+      updateSession(currentSession.id, (session) => ({
+        ...session,
+        title: data.title || session.title,
+        messages: [
+          ...session.messages,
+          { role: 'ai', content: data.reply || '分析完成。' }
+        ]
+      }))
+
+      updateWorkbench(currentSession.id, data.reply || '', data.files || [])
     } catch (error) {
-      setMessages(prev => [...prev, { role: 'ai', content: '❌ 后端连接异常' }])
+      updateSession(currentSession.id, (session) => ({
+        ...session,
+        messages: [
+          ...session.messages,
+          { role: 'ai', content: '❌ 后端连接异常' }
+        ]
+      }))
     } finally {
       setIsLoading(false)
     }
   }
 
+  const renderResultCard = (res, index) => {
+    if (res.type === 'plot') {
+      return (
+        <div key={res.id || index} className="result-card">
+          <h3>{res.title}</h3>
+          <div className="result-content">
+            <img src={res.content} alt={res.filename || 'Analysis Plot'} />
+            <div style={{ marginTop: '10px' }}>
+              <a
+                href={res.rawUrl || res.content}
+                target="_blank"
+                rel="noreferrer"
+                download={res.filename || true}
+              >
+                下载图片
+              </a>
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    if (res.type === 'file') {
+      return (
+        <div key={res.id || index} className="result-card">
+          <h3>{res.title}</h3>
+          <div className="result-content">
+            <p style={{ marginBottom: '10px', wordBreak: 'break-all' }}>
+              文件名：{res.filename || '未命名文件'}
+            </p>
+            <a
+              href={res.rawUrl || res.content}
+              target="_blank"
+              rel="noreferrer"
+              download={res.filename || true}
+              style={{
+                display: 'inline-block',
+                padding: '8px 12px',
+                borderRadius: '8px',
+                background: '#72bf44',
+                color: '#fff',
+                textDecoration: 'none',
+                fontWeight: 600
+              }}
+            >
+              下载文件
+            </a>
+          </div>
+        </div>
+      )
+    }
+
+    return (
+      <div key={res.id || index} className="result-card">
+        <h3>{res.title}</h3>
+        <div className="result-content">
+          <p>{res.content}</p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
       className="app-container"
-      style={{
-        display: 'flex',
-        width: '100vw',
-        height: '100vh',
-        overflow: 'hidden',
-        background: '#f6f8fb'
-      }}
+      style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}
     >
-      {/* 会话侧边栏 */}
+      {/* 左侧会话栏 */}
       <div
         style={{
           width: '260px',
-          minWidth: '260px',
-          borderRight: '1px solid #e5e7eb',
-          background: '#ffffff',
+          background: '#111827',
+          color: '#fff',
           display: 'flex',
-          flexDirection: 'column'
+          flexDirection: 'column',
+          borderRight: '1px solid rgba(255,255,255,0.08)'
         }}
       >
-        <div
-          style={{
-            padding: '16px',
-            borderBottom: '1px solid #eef2f7',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '10px'
-          }}
-        >
-          <div style={{ fontWeight: 700, fontSize: '18px', color: '#1f2937' }}>
-            会话列表
-          </div>
-
+        <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
           <button
-            onClick={createNewSession}
+            onClick={handleNewSession}
             style={{
+              width: '100%',
+              padding: '12px 14px',
+              borderRadius: '12px',
               border: 'none',
               background: '#72bf44',
               color: '#fff',
-              borderRadius: '10px',
-              padding: '10px 12px',
-              cursor: 'pointer',
-              fontWeight: 600
+              fontWeight: 700,
+              cursor: 'pointer'
             }}
           >
-            + 新建会话
+            ＋ 新会话
           </button>
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: '12px'
-          }}
-        >
-          {sessionList.length === 0 ? (
-            <div style={{ color: '#888', fontSize: '14px' }}>暂无历史会话</div>
-          ) : (
-            sessionList.map((item) => {
-              const active = item.session_id === sessionId
-              return (
-                <div
-                  key={item.session_id}
-                  onClick={() => switchSession(item.session_id)}
+        <div style={{ padding: '12px', fontSize: '12px', color: '#9ca3af' }}>
+          历史会话
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 10px 10px' }}>
+          {sessions.map((session) => (
+            <div
+              key={session.id}
+              onClick={() => handleSelectSession(session.id)}
+              style={{
+                marginBottom: '8px',
+                padding: '12px',
+                borderRadius: '12px',
+                cursor: 'pointer',
+                background:
+                  session.id === currentSessionId
+                    ? 'rgba(114,191,68,0.18)'
+                    : 'rgba(255,255,255,0.04)',
+                border:
+                  session.id === currentSessionId
+                    ? '1px solid rgba(114,191,68,0.45)'
+                    : '1px solid transparent'
+              }}
+            >
+              <div
+                style={{
+                  fontSize: '14px',
+                  fontWeight: 600,
+                  lineHeight: 1.4,
+                  wordBreak: 'break-word',
+                  marginBottom: '6px'
+                }}
+              >
+                {session.title || '新会话'}
+              </div>
+
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: '#9ca3af',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}
+              >
+                <span>{session.messages?.length || 0} 条消息</span>
+                <button
+                  onClick={(e) => handleDeleteSession(session.id, e)}
                   style={{
-                    padding: '12px',
-                    marginBottom: '10px',
-                    borderRadius: '12px',
-                    cursor: 'pointer',
-                    border: active ? '1px solid #72bf44' : '1px solid #e5e7eb',
-                    background: active ? '#f3faed' : '#fff',
-                    boxShadow: active
-                      ? '0 2px 8px rgba(114,191,68,0.12)'
-                      : '0 1px 4px rgba(0,0,0,0.04)'
+                    background: 'transparent',
+                    color: '#9ca3af',
+                    border: 'none',
+                    cursor: 'pointer'
                   }}
                 >
-                  <div
-                    style={{
-                      fontWeight: 600,
-                      color: '#1f2937',
-                      marginBottom: '6px',
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis'
-                    }}
-                  >
-                    {item.title || '新会话'}
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      color: '#6b7280',
-                      wordBreak: 'break-all',
-                      marginBottom: '4px'
-                    }}
-                  >
-                    {item.session_id}
-                  </div>
-
-                  <div style={{ fontSize: '12px', color: '#9ca3af' }}>
-                    {item.created_at ? String(item.created_at) : ''}
-                  </div>
-                </div>
-              )
-            })
-          )}
+                  删除
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
@@ -451,21 +560,39 @@ function App() {
             >
               🧬
             </div>
-
             <div className="header-info">
-              <h2>生物信息学 Agent Hub</h2>
+              <h2>{currentSession?.title || '生物信息学 Agent Hub'}</h2>
               <p>● ONLINE</p>
-              <small style={{ color: '#666' }}>
-                Session: {sessionId ? sessionId.slice(0, 12) + '...' : '初始化中...'}
-              </small>
             </div>
           </div>
 
           <div className="chat-window">
-            {messages.map((msg, index) => (
+            {(currentSession?.messages || []).map((msg, index) => (
               <div key={index} className={`message-wrapper ${msg.role}`}>
                 <div className={`message-bubble ${msg.role}`}>
-                  <ReactMarkdown>{msg.content}</ReactMarkdown>
+                  <ReactMarkdown
+                    components={{
+                      a: ({ href, children }) => (
+                        <a
+                          href={normalizeToAbsoluteFileUrl(href)}
+                          target="_blank"
+                          rel="noreferrer"
+                          download
+                        >
+                          {children}
+                        </a>
+                      ),
+                      img: ({ src, alt }) => (
+                        <img
+                          src={normalizeToAbsoluteFileUrl(src)}
+                          alt={alt || 'result'}
+                          style={{ maxWidth: '100%', borderRadius: '8px', marginTop: '8px' }}
+                        />
+                      )
+                    }}
+                  >
+                    {msg.content}
+                  </ReactMarkdown>
                 </div>
               </div>
             ))}
@@ -474,15 +601,11 @@ function App() {
               <div className="message-wrapper ai">
                 <div className="message-bubble ai thinking-bubble">
                   <div className="typing-dots">
-                    <span></span><span></span><span></span>
+                    <span></span>
+                    <span></span>
+                    <span></span>
                   </div>
-                  <span
-                    style={{
-                      color: '#72bf44',
-                      fontWeight: 'bold',
-                      marginLeft: '10px'
-                    }}
-                  >
+                  <span style={{ color: '#72bf44', fontWeight: 'bold', marginLeft: '10px' }}>
                     正在分析...
                   </span>
                 </div>
@@ -493,10 +616,8 @@ function App() {
           </div>
 
           <div className="input-area">
-            {attachedFile && (
-              <div className="file-ready">
-                📄 待处理: {attachedFile}
-              </div>
+            {currentSession?.attachedFile && (
+              <div className="file-ready">📄 待处理: {currentSession.attachedFile}</div>
             )}
 
             <div className="input-container">
@@ -509,8 +630,7 @@ function App() {
 
               <button
                 className="N-btn"
-                onClick={() => fileInputRef.current?.click()}
-                title="上传文件"
+                onClick={() => fileInputRef.current && fileInputRef.current.click()}
               >
                 N
               </button>
@@ -530,7 +650,6 @@ function App() {
         </div>
       </div>
 
-      {/* 拖拽分隔条 */}
       <div className="resizer" onMouseDown={startResizing} />
 
       {/* 右侧工作台 */}
@@ -540,43 +659,7 @@ function App() {
           <h3>Analysis Workbench</h3>
         </div>
 
-        {results.map((res, index) => (
-          <div key={index} className="result-card">
-            <h3>{res.title}</h3>
-            <div className="result-content">
-              {res.type === 'image' ? (
-                <div>
-                  <img src={res.content} alt={res.name || 'Analysis Plot'} />
-                  <div style={{ marginTop: '10px' }}>
-                    <a
-                      href={res.content}
-                      download={res.name}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      下载 {res.name || '图片'}
-                    </a>
-                  </div>
-                </div>
-              ) : res.type === 'file' ? (
-                <div className="file-card">
-                  <p><strong>文件名：</strong>{res.name}</p>
-                  <p><strong>文件类型：</strong>{getFileTypeLabel(res.fileType)}</p>
-                  <a
-                    href={res.content}
-                    download={res.name}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    点击下载
-                  </a>
-                </div>
-              ) : (
-                <p>{res.content}</p>
-              )}
-            </div>
-          </div>
-        ))}
+        {(currentSession?.results || []).map((res, index) => renderResultCard(res, index))}
       </div>
     </div>
   )
