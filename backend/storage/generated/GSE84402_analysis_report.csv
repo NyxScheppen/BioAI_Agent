@@ -1,0 +1,7 @@
+"Section","Result"
+"Data Loading","Loaded 54675 genes across 28 samples"
+"Data Filtering","Filtered to 45779 genes (removed 8896 low-expressed genes)"
+"Normalization","Log2 transformation + quantile normalization applied"
+"Quality Control","Generated PCA plot, correlation heatmap, and expression distribution plots"
+"Differential Expression","Found 0 upregulated and 0 downregulated genes (FDR < 0.05, |logFC| > 1)"
+"Clustering Analysis","Performed hierarchical clustering on top 1000 variable genes"
