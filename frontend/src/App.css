@@ -211,3 +211,35 @@ body, html {
   
 /* LAB 标签 */
 .lab-tag { background: #72bf44; color: white; padding: 4px 10px; border-radius: 6px; font-weight: bold; font-size: 12px; letter-spacing: 1px; }
+
+.file-card {
+  background: #f7faf7;
+  border: 1px solid #dbead5;
+  border-radius: 12px;
+  padding: 14px;
+}
+
+.file-card p {
+  margin: 6px 0;
+  color: #333;
+}
+
+.file-card a,
+.result-content a {
+  display: inline-block;
+  margin-top: 8px;
+  color: #2e7d32;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+.file-card a:hover,
+.result-content a:hover {
+  text-decoration: underline;
+}
+
+.result-content img {
+  max-width: 100%;
+  border-radius: 12px;
+  display: block;
+}
