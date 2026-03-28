@@ -184,6 +184,7 @@ Rscript --version
 ```
 
 2. 环境依赖下载
+
 在项目根目录下执行：
 ```bash
 bash scripts/setup_all.sh
@@ -200,6 +201,7 @@ bash scripts/setup_all.sh
 ```
 
 3. 全工具追求者
+
 如果想使用完整的工具，请在根目录下运行以下代码
 ```bash
 cd backend
@@ -207,7 +209,9 @@ pip install -r requirements.txt
 cd ..
 ```
 要等很长，很长，很长的一段时间，建议冲一杯咖啡坐在屏幕前，给家人打个电话，或者做点比看着终端发呆更有意义的事情
+
 4. 运行
+
 打开终端，在项目根目录下，运行
 ```bash
 npm run dev
