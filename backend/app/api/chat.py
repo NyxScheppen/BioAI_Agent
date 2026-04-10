@@ -8,23 +8,13 @@ router = APIRouter()
 
 @router.post("/api/chat")
 async def chat_endpoint(request: ChatRequest, db: Session = Depends(get_db)):
-    """
-    接口：
-    POST /api/chat
-
-    请求体支持：
-    {
-      "messages": [...]
-    }
-
-    同时支持：
-    {
-      "messages": [...],
-      "session_id": "xxx"
-    }
-    """
     try:
-        return await handle_chat(db, request.session_id, request.messages)
+        return await handle_chat(
+            db=db,
+            session_id=request.session_id,
+            messages=request.messages,
+            attached_files=[f.model_dump() for f in (request.attached_files or [])]
+        )
     except Exception as e:
         print(f"🔥 聊天接口报错: {e}")
         safe_error = str(e).replace('"', "'").replace("\n", " ")

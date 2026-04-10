@@ -1,0 +1,23 @@
+GSE84402 数据处理报告
+生成时间: 2026-04-10 22:18:59.798659
+
+1. 文件基本信息:
+   原始文件: GSE84402_series_matrix.txt.gz
+   文件大小: 2.62 MB
+   总行数: 54740
+
+2. 表达矩阵信息:
+   表头行: 64
+   探针数量: 54675
+   样本数量: 28
+
+3. 样本分组信息:
+   Cancer组: 28
+   Normal组: 0
+   男性样本: 18
+   女性样本: 10
+
+4. 生成文件:
+    GSE84402_sample_info.csv - 样本分组信息
+    GSE84402_expression_matrix_sample.csv - 表达矩阵示例
+    GSE84402_processing_report.txt - 本报告

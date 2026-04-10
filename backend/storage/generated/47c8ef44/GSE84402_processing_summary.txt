@@ -1,0 +1,15 @@
+文件: GSE84402_series_matrix.txt.gz
+处理时间: 2026-04-10 21:40:50.880155
+总行数: 54740
+系列信息行数: 26
+样本信息行数: 35
+数据开始行: 64
+样本数量: 0
+基因/探针数量: 54676
+数据列数: 29
+
+=== 系列信息 ===
+GEO accession: "GSE84402"
+标题: "Expression data from human hepatocellular carcinoma tissues and the correponding non-cancerous tissues"
+类型: "Expression profiling by array"
+提交日期: "Jul 14 2016"
