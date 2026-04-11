@@ -14,27 +14,33 @@ function MessageList({
           <div className={`message-bubble ${msg.role}`}>
             <ReactMarkdown
               components={{
-                a: ({ href, children }) => (
-                  <a
-                    href={normalizeToAbsoluteFileUrl(href)}
-                    target="_blank"
-                    rel="noreferrer"
-                    download
-                  >
-                    {children}
-                  </a>
-                ),
-                img: ({ src, alt }) => (
-                  <img
-                    src={normalizeToAbsoluteFileUrl(src)}
-                    alt={alt || 'result'}
-                    style={{
-                      maxWidth: '100%',
-                      borderRadius: '8px',
-                      marginTop: '8px'
-                    }}
-                  />
-                )
+                a: ({ href, children }) => {
+                  const finalHref = normalizeToAbsoluteFileUrl(href)
+
+                  return (
+                    <a href={finalHref} target="_blank" rel="noreferrer" download>
+                      {children}
+                    </a>
+                  )
+                },
+                img: ({ src, alt }) => {
+                  const finalSrc = normalizeToAbsoluteFileUrl(src)
+
+                  return (
+                    <img
+                      src={finalSrc}
+                      alt={alt || 'result'}
+                      style={{
+                        maxWidth: '100%',
+                        borderRadius: '8px',
+                        marginTop: '8px'
+                      }}
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                  )
+                }
               }}
             >
               {msg.content}

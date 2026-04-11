@@ -21,7 +21,8 @@ import {
   getRelativePathFromUrl,
   buildResultFromFile,
   mergeSessionResults,
-  isFileAlreadyAttached
+  isFileAlreadyAttached,
+  getCanonicalResultKey
 } from './utils/fileHelpers'
 
 const createSession = (agentMode = 'bird') => {
@@ -236,7 +237,8 @@ function App() {
     if (!currentSession) return
     if (!(res.type === 'plot' || res.type === 'file')) return
 
-    const relativePath = res.relativePath || getRelativePathFromUrl(res.rawUrl || res.content, API_BASE)
+    const relativePath =
+      res.relativePath || getRelativePathFromUrl(res.rawUrl || res.content, API_BASE)
 
     const fileItem = {
       filename: res.filename || relativePath.split('/').pop() || 'result_file',
@@ -260,22 +262,140 @@ function App() {
 
   const updateWorkbench = (sessionId, aiReply, backendFiles = []) => {
     const markdownImgRegex = /!\[.*?\]\((.*?)\)/g
+    const markdownLinkRegex = /\[([^\]]+)\]\((.*?)\)/g
     const plainUrlRegex =
       /http:\/\/127\.0\.0\.1:8000\/files\/[a-zA-Z0-9_./-]+\.(png|jpg|jpeg|svg|gif|webp)/gi
-    const markdownLinkRegex = /\[([^\]]+)\]\((.*?)\)/g
 
-    const imageUrls = new Set()
-    const fileLinks = new Map()
-    const newResults = []
+    const normalizedBackendFiles = Array.isArray(backendFiles)
+      ? backendFiles.map((file) => ({
+          ...file,
+          filename: file.filename || file.name || '',
+          relative_path: file.relative_path || file.relativePath || '',
+          url:
+            file.url ||
+            (file.relative_path || file.relativePath
+              ? `/files/${file.relative_path || file.relativePath}`
+              : '')
+        }))
+      : []
+
+    const backendByFilename = new Map()
+    const backendByRelativePath = new Map()
+    const resultMap = new Map()
+
+    normalizedBackendFiles.forEach((file) => {
+      const filename = file.filename || ''
+      const relativePath = file.relative_path || ''
+      if (filename) backendByFilename.set(filename, file)
+      if (relativePath) backendByRelativePath.set(relativePath, file)
+    })
+
+    const pushUniqueResult = (item) => {
+      if (!item) return
+      const key = getCanonicalResultKey(item, API_BASE)
+      if (!key) return
+
+      const existing = resultMap.get(key)
+      if (!existing) {
+        resultMap.set(key, item)
+        return
+      }
+
+      const existingHasRelative = !!(
+        existing.relativePath ||
+        getRelativePathFromUrl(existing.rawUrl || existing.content || '', API_BASE)
+      )
+      const currentHasRelative = !!(
+        item.relativePath || getRelativePathFromUrl(item.rawUrl || item.content || '', API_BASE)
+      )
+
+      if (!existingHasRelative && currentHasRelative) {
+        resultMap.set(key, item)
+      }
+    }
+
+    const buildImageResult = (urlOrPath, title = '📊 分析图表') => {
+      if (!urlOrPath) return null
+
+      const rawInput = String(urlOrPath).trim()
+      const normalizedUrl = normalizeToAbsoluteFileUrl(rawInput, API_BASE)
+      let relativePath = getRelativePathFromUrl(normalizedUrl, API_BASE)
+      let filename = normalizedUrl.split('?')[0].split('/').pop() || 'plot.png'
+
+      const backendMatchByPath = backendByRelativePath.get(relativePath)
+      const backendMatchByName = backendByFilename.get(filename)
+
+      const backendMatch = backendMatchByPath || backendMatchByName
+
+      if (backendMatch) {
+        const fromBackend = buildResultFromFile(backendMatch, API_BASE)
+        return {
+          ...fromBackend,
+          title
+        }
+      }
+
+      if (!rawInput.includes('/') && !rawInput.startsWith('http')) {
+        return null
+      }
+
+      return {
+        id: `img_${relativePath || filename}_${Date.now()}_${Math.random()}`,
+        type: 'plot',
+        fileType: 'image',
+        title,
+        content: `${normalizedUrl}?t=${Date.now()}`,
+        rawUrl: normalizedUrl,
+        filename,
+        relativePath,
+        sourceType: 'generated'
+      }
+    }
+
+    const buildFileResult = (text, urlOrPath) => {
+      if (!urlOrPath) return null
+
+      const rawInput = String(urlOrPath).trim()
+      const normalizedUrl = normalizeToAbsoluteFileUrl(rawInput, API_BASE)
+      let relativePath = getRelativePathFromUrl(normalizedUrl, API_BASE)
+      let filename = text || normalizedUrl.split('?')[0].split('/').pop() || 'download'
+
+      const backendMatchByPath = backendByRelativePath.get(relativePath)
+      const backendMatchByName = backendByFilename.get(filename)
+
+      const backendMatch = backendMatchByPath || backendMatchByName
+
+      if (backendMatch) {
+        return buildResultFromFile(backendMatch, API_BASE)
+      }
+
+      if (!rawInput.includes('/') && !rawInput.startsWith('http')) {
+        return null
+      }
+
+      return {
+        id: `file_${relativePath || filename}_${Date.now()}_${Math.random()}`,
+        type: 'file',
+        fileType: 'other',
+        title: `📄 ${text || '结果文件'}`,
+        content: normalizedUrl,
+        rawUrl: normalizedUrl,
+        filename,
+        relativePath,
+        sourceType: 'generated'
+      }
+    }
 
     let match
     while ((match = markdownImgRegex.exec(aiReply)) !== null) {
-      if (match[1]) imageUrls.add(match[1])
+      const item = buildImageResult(match[1], '📊 分析图表')
+      pushUniqueResult(item)
     }
 
     let urlMatch
     while ((urlMatch = plainUrlRegex.exec(aiReply)) !== null) {
-      imageUrls.add(urlMatch[0])
+      const item = buildImageResult(urlMatch[0], '📊 分析图表')
+      pushUniqueResult(item)
     }
 
     let linkMatch
@@ -284,57 +404,29 @@ function App() {
       const url = linkMatch[2]
       if (!url) continue
 
-      const lower = url.toLowerCase()
+      const lower = String(url).toLowerCase()
       const isImage = /\.(png|jpg|jpeg|svg|gif|webp)(\?|$)/i.test(lower)
 
       if (isImage) {
-        imageUrls.add(url)
+        const item = buildImageResult(url, '📊 分析图表')
+        pushUniqueResult(item)
       } else {
-        const abs = normalizeToAbsoluteFileUrl(url, API_BASE)
-        fileLinks.set(abs, {
-          id: `md_${abs}_${Date.now()}_${Math.random()}`,
-          type: 'file',
-          fileType: 'other',
-          title: `📄 ${text || '结果文件'}`,
-          content: abs,
-          rawUrl: abs,
-          filename: text || abs.split('/').pop() || 'download',
-          relativePath: getRelativePathFromUrl(abs, API_BASE),
-          sourceType: 'generated'
-        })
+        const item = buildFileResult(text, url)
+        pushUniqueResult(item)
       }
     }
 
-    imageUrls.forEach((url) => {
-      const finalUrl = normalizeToAbsoluteFileUrl(url, API_BASE)
-      if (!finalUrl) return
-
-      newResults.push({
-        id: `img_${finalUrl}_${Date.now()}_${Math.random()}`,
-        type: 'plot',
-        fileType: 'image',
-        title: '📊 分析图表',
-        content: `${finalUrl}?t=${Date.now()}`,
-        rawUrl: finalUrl,
-        filename: finalUrl.split('/').pop() || 'plot.png',
-        relativePath: getRelativePathFromUrl(finalUrl, API_BASE),
-        sourceType: 'generated'
-      })
+    normalizedBackendFiles.forEach((file) => {
+      pushUniqueResult(buildResultFromFile(file, API_BASE))
     })
 
-    if (Array.isArray(backendFiles)) {
-      backendFiles.forEach((file) => {
-        newResults.push(buildResultFromFile(file, API_BASE))
-      })
-    }
-
-    fileLinks.forEach((item) => newResults.push(item))
+    const newResults = Array.from(resultMap.values())
 
     if (newResults.length === 0) return
 
     updateSession(sessionId, (session) => ({
       ...session,
-      results: mergeSessionResults(session, newResults)
+      results: mergeSessionResults(session, newResults, API_BASE)
     }))
   }
 

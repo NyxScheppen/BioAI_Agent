@@ -1,0 +1,45 @@
+==========================================
+      GSE84402 差异表达分析报告
+==========================================
+
+一、数据集信息
+数据集: GSE84402
+标题: Expression data from human hepatocellular carcinoma tissues and the corresponding non-cancerous tissues
+平台: Affymetrix Human Genome U133 Plus 2.0 Array (GPL570)
+样本: 14对肝细胞癌组织 vs 癌旁正常组织 (共28个样本)
+PMID: 28810927
+
+二、分析参数
+分析方法: limma (线性模型)
+显著性阈值: adj.P.Val < 0.05
+差异倍数阈值: |log2FC| > 1 (即2倍变化)
+
+三、主要结果
+总探针数: 54,675
+显著差异基因总数: 1,130
+上调基因数: 665 (癌组织中高表达)
+下调基因数: 465 (癌组织中低表达)
+上调基因比例: 1.22%
+下调基因比例: 0.85%
+
+四、最显著基因
+Top上调基因: 220295_x_at (logFC=18.19), 229538_s_at (logFC=29.82)
+Top下调基因: 205404_at (logFC=-1612.71), 227654_at (logFC=-82.11)
+
+五、生成文件
+1. GSE84402_DEG_results_full.csv - 完整差异表达结果
+2. GSE84402_significant_DEGs.csv - 显著差异基因表格
+3. GSE84402_volcano_plot.png - 火山图
+4. GSE84402_top50_DEGs_heatmap_data.csv - 热图数据
+5. GSE84402_all_significant_genes_list.txt - 显著基因列表
+6. GSE84402_up_genes_list.txt - 上调基因列表
+7. GSE84402_down_genes_list.txt - 下调基因列表
+8. GSE84402_DEG_detailed_summary.csv - 详细统计摘要
+
+六、结论
+在肝细胞癌组织中，共鉴定出1,130个显著差异表达基因。
+其中665个基因在癌组织中上调表达，465个基因下调表达。
+这些差异基因可能参与肝癌的发生发展过程。
+
+分析完成时间:
+2026-04-10 23:00:08.54216

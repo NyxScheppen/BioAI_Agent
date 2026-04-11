@@ -3,6 +3,8 @@ export const normalizeToAbsoluteFileUrl = (url, apiBase) => {
 
   let finalUrl = String(url).trim()
 
+  if (!finalUrl) return ''
+
   if (finalUrl.startsWith('http://') || finalUrl.startsWith('https://')) {
     return finalUrl.replace('/workspace/', '/files/')
   }
@@ -30,7 +32,7 @@ export const normalizeToAbsoluteFileUrl = (url, apiBase) => {
 export const getRelativePathFromUrl = (url, apiBase) => {
   if (!url) return ''
 
-  const str = String(url)
+  const str = String(url).split('?')[0]
 
   if (str.startsWith('/files/')) {
     return str.replace('/files/', '')
@@ -47,6 +49,36 @@ export const getRelativePathFromUrl = (url, apiBase) => {
   return str.replace(/^\/+/, '')
 }
 
+const normalizeFilename = (value) => {
+  if (!value) return ''
+  return String(value).split('?')[0].split('/').pop() || ''
+}
+
+export const getCanonicalResultKey = (item, apiBase = '') => {
+  if (!item) return ''
+
+  const relativePath =
+    item.relativePath ||
+    item.relative_path ||
+    getRelativePathFromUrl(item.rawUrl || item.content || item.url || '', apiBase)
+
+  if (relativePath) {
+    return `path:${String(relativePath).split('?')[0].replace(/^\/+/, '')}`
+  }
+
+  const raw = item.rawUrl || item.content || item.url || ''
+  if (raw) {
+    return `url:${String(raw).split('?')[0]}`
+  }
+
+  const filename = normalizeFilename(item.filename || item.name || item.title)
+  if (filename) {
+    return `name:${filename}`
+  }
+
+  return ''
+}
+
 export const guessResultType = (file) => {
   if (!file) return 'file'
   if (file.type === 'image') return 'plot'
@@ -54,43 +86,66 @@ export const guessResultType = (file) => {
 }
 
 export const buildResultFromFile = (file, apiBase) => {
-  const absoluteUrl = normalizeToAbsoluteFileUrl(file.url || file.relative_path || file.name, apiBase)
+  const relativePath = file.relative_path || file.relativePath || ''
+  const absoluteUrl = normalizeToAbsoluteFileUrl(
+    file.url || relativePath || file.name || file.filename,
+    apiBase
+  )
+  const filename = file.filename || file.name || normalizeFilename(relativePath) || 'download'
+  const resultType = guessResultType(file)
 
   return {
-    id: `${file.relative_path || file.name}_${Date.now()}_${Math.random()}`,
-    type: guessResultType(file),
+    id: `${relativePath || filename}_${Date.now()}_${Math.random()}`,
+    type: resultType,
     fileType: file.type || 'other',
-    title: file.type === 'image' ? '📊 分析图表' : `📄 ${file.name || file.filename}`,
-    content: file.type === 'image' ? `${absoluteUrl}?t=${Date.now()}` : absoluteUrl,
+    title: resultType === 'plot' ? '📊 分析图表' : `📄 ${filename}`,
+    content: resultType === 'plot' ? `${absoluteUrl}?t=${Date.now()}` : absoluteUrl,
     rawUrl: absoluteUrl,
-    filename: file.name || file.filename || 'download',
-    relativePath: file.relative_path || '',
+    filename,
+    relativePath,
     sourceType: file.source_type || 'generated'
   }
 }
 
-export const mergeSessionResults = (session, incomingResults) => {
+export const mergeSessionResults = (session, incomingResults, apiBase = '') => {
   const prevResults = session.results || []
+  const allResults = [...(incomingResults || []), ...prevResults]
+  const resultMap = new Map()
 
-  const existingKeys = new Set(
-    prevResults.map((item) =>
-      item.type === 'plot'
-        ? `${item.filename || ''}|${(item.content || '').split('?')[0]}`
-        : `${item.filename || ''}|${item.rawUrl || item.content || ''}`
-    )
-  )
+  allResults.forEach((item) => {
+    const key = getCanonicalResultKey(item, apiBase)
 
-  const uniqueNew = incomingResults.filter((item) => {
-    const key =
-      item.type === 'plot'
-        ? `${item.filename || ''}|${(item.content || '').split('?')[0]}`
-        : `${item.filename || ''}|${item.rawUrl || item.content || ''}`
-    if (existingKeys.has(key)) return false
-    existingKeys.add(key)
-    return true
+    if (!key) {
+      resultMap.set(`fallback:${item.id || Math.random()}`, item)
+      return
+    }
+
+    const existing = resultMap.get(key)
+
+    if (!existing) {
+      resultMap.set(key, item)
+      return
+    }
+
+    const existingHasPath =
+      existing.relativePath ||
+      existing.relative_path ||
+      getRelativePathFromUrl(existing.rawUrl || existing.content || existing.url || '', apiBase)
+
+    const currentHasPath =
+      item.relativePath ||
+      item.relative_path ||
+      getRelativePathFromUrl(item.rawUrl || item.content || item.url || '', apiBase)
+
+    const existingIsBackend = existing.sourceType === 'generated' && !!existingHasPath
+    const currentIsBackend = item.sourceType === 'generated' && !!currentHasPath
+
+    if (!existingIsBackend && currentIsBackend) {
+      resultMap.set(key, item)
+    }
   })
 
-  return [...uniqueNew, ...prevResults]
+  return Array.from(resultMap.values())
 }
 
 export const isFileAlreadyAttached = (session, targetFile) => {
